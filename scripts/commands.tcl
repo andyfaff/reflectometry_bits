@@ -27,14 +27,14 @@ namespace eval beam {
 
 namespace eval exp_mode {
   variable valid_modes
-  #guide element for a specific mode
+  # guide element for a specific mode
   variable guide_for_mode
   variable c1ht_pos
-  #0=polarisation
-  #1=mt
-  #2=focussing
-  #3=DB
-  #4=Single
+  # 0 = polarisation
+  # 1 = mt
+  # 2 = focussing
+  # 3 = DB
+  # 4 = Single
   variable c1ht_pos
   set valid_modes [list SB DB FOC MT POL POLANAL]
   set c1ht_pos [list 1057 806.7 557.1 320 68.9 68.9]
@@ -59,12 +59,12 @@ namespace eval exp_mode {
 
   proc ::exp_mode::omega_2theta { arg1 arg2 {s1vg 0} {s2vg 0} {s3vg 0} {s4vg 0}} {
 
-  #need to set omega first.  This is because
-  #for Single bounce the twotheta positions depend on the angle of incidence
-  #   whenever omega_2theta is called, or the mode is changed, the slits should close
-  #   this is to save the detector from being overloaded.
-  #   the following line does the job.  However, it is duplicated when the mode is set in
-  #   set_omega, so it is commented out for now.
+  # need to set omega first.  This is because
+  # for Single bounce the twotheta positions depend on the angle of incidence
+  # whenever omega_2theta is called, or the mode is changed, the slits should close
+  # this is to save the detector from being overloaded.
+  # the following line does the job.  However, it is duplicated when the mode is set in
+  # set_omega, so it is commented out for now.
 
     omega $arg1
     twotheta $arg2
@@ -110,6 +110,7 @@ namespace eval exp_mode {
 }
 publish ::exp_mode::omega_2theta user
 
+
 ##
 # @brief Drive c1ht and set guide_element parameter
 #
@@ -140,6 +141,7 @@ proc ::exp_mode::set_guide_element { arg } {
   }
 }
 
+
 proc ::exp_mode::set_omega { arg } {
   set expmode [SplitReply [mode]]
   if {[lsearch $::exp_mode::valid_modes $expmode] == -1} {
@@ -150,9 +152,9 @@ proc ::exp_mode::set_omega { arg } {
   #  if {$arg<0} {
   #    return -code error "omega must be greater than 0"
   #  }
-  #the modes is set to ensure that the right guide element is in place
-  #someone may have changed it by hand.  DO NOT REMOVE THIS FUNCTIONALITY
-  #as it also has the effect of closing all the ssXvg gaps for safety.
+  # the modes is set to ensure that the right guide element is in place
+  # someone may have changed it by hand.  DO NOT REMOVE THIS FUNCTIONALITY
+  # as it also has the effect of closing all the ssXvg gaps for safety.
 
   if {[catch {::exp_mode::set_guide_element $expmode} errMsg]} {
   #make sure the guide element is moved.
@@ -172,7 +174,6 @@ proc ::exp_mode::set_omega { arg } {
       set h1 [expr -1. * $d1 * tan($argrad)]
       set h2 [expr -1. * $d2 * tan($argrad)]
 
-      if {[catch {isszst4vtsafe sz $h2} errMsg]} {return -code error $errMsg}
       if  { [catch {
         checkMotion st3vt $h1
         checkMotion sz $h2
@@ -182,9 +183,9 @@ proc ::exp_mode::set_omega { arg } {
       drive st3vt $h1 sz $h2
     }
     DB {
-    #checked ARJN on 081231
+    # checked ARJN on 081231
       set temp [deg2rad 2.4]
-      #offset is the vertical drop from the beam centre onto the middle of the second compound mirror
+      # offset is the vertical drop from the beam centre onto the middle of the second compound mirror
       # each compound mirror is 600mm long
       # therefore the distance between the place where the beam hits the centre of both mirrors is
       # 2 * 300 * cos(1.2) = 599.868
@@ -202,7 +203,6 @@ proc ::exp_mode::set_omega { arg } {
       set h1 [expr -1. * $d1 * tan($argrad) - $offset]
       set h2 [expr -1. * $d2 * tan($argrad) - $offset]
 
-      if { [catch {isszst4vtsafe sz $h2} errMsg]} {return -code error $errMsg}
       if  { [catch {
         checkMotion st3vt $h1
         checkMotion sz $h2
@@ -256,6 +256,7 @@ proc ::exp_mode::set_omega { arg } {
 }
 publish ::exp_mode::set_omega user
 
+
 proc ::exp_mode::set_two_theta { arg } {
   set expmode [SplitReply [mode]]
   set expomega [SplitReply [omega]]
@@ -270,21 +271,21 @@ proc ::exp_mode::set_two_theta { arg } {
   #    return -code error "two_theta is less than 0"
   #  }
 
-  #2theta position in radians
+  # 2theta position in radians
   set argrad [deg2rad $arg]
   set omegarad [deg2rad $expomega]
 
   Clientput $expmode
   switch $expmode {
     SB {
-    #checked ARJN 081231
+    # checked ARJN 081231
       set d1 [expr [SplitReply [slit4_distance]] - [SplitReply [sample_distance]]]
       set d2 [expr [SplitReply [slit4_distance]] - [SplitReply [guide1_distance]]]
-      #distance if 2theta is zero, i.e. the direct beam
+      # distance if 2theta is zero, i.e. the direct beam
       set h1 [expr -1. * $d2 * tan($omegarad)]
       set b  [expr $d1 / cos($omegarad)]
       set c  [expr $d1 / cos($argrad-$omegarad)]
-      #cosine rule
+      # cosine rule
       set h2 [expr sqrt(pow($b,2) + pow($c,2) - 2*$b*$c*cos($argrad))]
 
       set d3 [expr [SplitReply [dy]]]
@@ -293,7 +294,6 @@ proc ::exp_mode::set_two_theta { arg } {
       set b  [expr $d3 / cos($omegarad)]
       set c  [expr $d3 / cos($argrad-$omegarad)]
       set h4 [expr sqrt(pow($b,2) + pow($c,2) - 2*$b*$c*cos($argrad))]
-      if { [catch {isszst4vtsafe st4vt [expr $h2 + $h1]} errMsg]} {return -code error $errMsg}
       if  { [catch {
         checkMotion st4vt [expr $h2 + $h1]
         checkMotion dz [expr $h3 + $h4]
@@ -323,7 +323,6 @@ proc ::exp_mode::set_two_theta { arg } {
       set b  [expr $d3 / cos($omegarad)]
       set c  [expr $d3 / cos($argrad-$omegarad)]
       set h4 [expr sqrt(pow($b,2) + pow($c,2) - 2*$b*$c*cos($argrad))]
-      if { [catch {isszst4vtsafe st4vt [expr $h2 + $h1]} errMsg]} {return -code error $errMsg}
       if  { [catch {
         checkMotion st4vt [expr $h2 + $h1]
         checkMotion dz [expr $h3 + $h4]
@@ -337,7 +336,6 @@ proc ::exp_mode::set_two_theta { arg } {
       set d2 [expr [SplitReply [slit4_distance]] - [SplitReply [sample_distance]]]
       set h1 [expr $d1 * tan($argrad)]
       set h2 [expr $d2 * tan($argrad)]
-      if { [catch {isszst4vtsafe st4vt $h2} errMsg]} {return -code error $errMsg}
       if  { [catch {
         checkMotion st4vt $h2
         checkMotion dz $h1
@@ -351,7 +349,6 @@ proc ::exp_mode::set_two_theta { arg } {
       set d2 [expr [SplitReply [slit4_distance]] - [SplitReply [sample_distance]]]
       set h1 [expr $d1 * tan($argrad)]
       set h2 [expr $d2 * tan($argrad)]
-      if { [catch {isszst4vtsafe st4vt $h2} errMsg]} {return -code error $errMsg}
       if  { [catch {
         checkMotion st4vt $h2
         checkMotion dz $h1
@@ -365,7 +362,6 @@ proc ::exp_mode::set_two_theta { arg } {
       set d2 [expr [SplitReply [slit4_distance]] - [SplitReply [sample_distance]]]
       set h1 [expr $d1 * tan($argrad)]
       set h2 [expr $d2 * tan($argrad)]
-      if { [catch {isszst4vtsafe st4vt $h2} errMsg]} {return -code error $errMsg}
       if  { [catch {
         checkMotion st4vt $h2
         checkMotion dz $h1
@@ -382,7 +378,6 @@ proc ::exp_mode::set_two_theta { arg } {
       set h2 [expr $d2 * tan($argrad)]
       set h3 [expr $d3 * tan($argrad)]
       set ang1 [expr $arg]
-      if { [catch {isszst4vtsafe st4vt $h2} errMsg]} {return -code error $errMsg}
       if  { [catch {
         checkMotion st4vt $h2
         checkMotion dz $h1
@@ -401,6 +396,7 @@ proc ::exp_mode::set_two_theta { arg } {
 }
 publish ::exp_mode::set_two_theta user
 
+
 proc ::exp_mode::checkMotion { scan_variable target } {
   set motor_list [sicslist type motor]
 
@@ -409,8 +405,6 @@ proc ::exp_mode::checkMotion { scan_variable target } {
   }
   set softzero [SplitReply [$scan_variable softzero]]
   set absoluteTarget [expr $softzero+$target]
-
-  if { [catch {isszst4vtsafe $scan_variable $target} errMsg]} {return -code error $errMsg}
 
   if {[catch {
     ::scan::check_limit $scan_variable hardlowerlim $absoluteTarget
@@ -423,6 +417,7 @@ proc ::exp_mode::checkMotion { scan_variable target } {
   return -code ok
 }
 publish ::exp_mode::checkMotion user
+
 
 proc ::exp_mode::checkMotionAndDrive { scan_variable target } {
   set motor_list [sicslist type motor]
@@ -448,6 +443,7 @@ proc ::exp_mode::checkMotionAndDrive { scan_variable target } {
 }
 publish ::exp_mode::checkMotionAndDrive user
 
+
 proc ::exp_mode::isszst4vtsafe { scan_variable target } {
   set szsoftzero [SplitReply [sz softzero]]
   set st4vtsoftzero [SplitReply [st4vt softzero]]
@@ -472,7 +468,6 @@ proc ::exp_mode::isszst4vtsafe { scan_variable target } {
   }
   return -code ok
 }
-
 publish ::exp_mode::isszst4vtsafe user
 
 
@@ -485,6 +480,16 @@ proc ::exp_mode::rad2deg { arg } {
   set pi 3.1415926535897931
   return [expr 180. * $arg / $pi]
 }
+
+
+proc ::exp_mode::rel { scan_variable delta }{
+    # Drives a motor by a relative amount (if possible)
+    # where are you?
+    set current_pos [SplitReply [$scan_variable]]
+    set desired_pos [expr $current_pos + $delta)]
+    ::exp_mode::checkMotionAndDrive $scan_variable $desired_pos
+}
+publish ::exp_mode::rel user
 
 
 proc ::exp_mode::nomega_2theta { arg1 arg2 {s1vg 0} {s2vg 0} {s3vg 0} {s4vg 0}} {
@@ -575,7 +580,7 @@ proc ::exp_mode::get_omega { arg } {
 
       checkMotion st3vt $h1
       checkMotion sz $h2
-      checkmotion m1ro $m1roh
+      checkMotion m1ro $m1roh
       return "st3vt $h1 sz $h2 m1ro $m1roh"
     }
     DB {
