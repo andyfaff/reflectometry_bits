@@ -84,7 +84,7 @@ namespace eval exp_mode {
     drive fs_shutter_request 0
 
     if {[catch {
-            drive ss1u [expr 0.5 * $s1vg] ss1d [expr -0.5 * $s1vg] ss2d [expr -0.5 * $s2vg] ss3u [expr 0.5 * $s3vg] ss4d [expr -0.5*$s4vg] ss2u [expr 0.5 * $s2vg] ss3d [expr -0.5 * $s3vg] ss4u [expr 0.5 * $s4vg]
+      drive ss1u [expr 0.5 * $s1vg] ss1d [expr -0.5 * $s1vg] ss2d [expr -0.5 * $s2vg] ss3u [expr 0.5 * $s3vg] ss4d [expr -0.5*$s4vg] ss2u [expr 0.5 * $s2vg] ss3d [expr -0.5 * $s3vg] ss4u [expr 0.5 * $s4vg]
       ::exp_mode::set_omega $arg1
       ::exp_mode::set_two_theta $arg2
     } errMsg ] } {
@@ -486,7 +486,279 @@ proc ::exp_mode::rad2deg { arg } {
   return [expr 180. * $arg / $pi]
 }
 
-##
+
+proc ::exp_mode::nomega_2theta { arg1 arg2 {s1vg 0} {s2vg 0} {s3vg 0} {s4vg 0}} {
+
+  # need to set omega first.  This is because
+  # for Single bounce the twotheta positions depend on the angle of incidence
+  # whenever omega_2theta is called, or the mode is changed, the slits should close
+  # this is to save the detector from being overloaded.
+  # the following line does the job.  However, it is duplicated when the mode is set in
+  # set_omega, so it is commented out for now.
+
+  omega $arg1
+  twotheta $arg2
+  if {![string is double $arg1] || ![string is double $arg2]} {
+    return -code error "omega  and two theta should be a proper number"
+  }
+
+  statemon start om2th
+
+  if {![string is double $s1vg] || ![string is double $s2vg] || ![string is double $s3vg] || ![string is double $s4vg]} {
+    drive ss1u 0 ss1d 0 ss2d 0 ss3u 0 ss4d 0 ss2u 0 ss3d 0 ss4u 0
+    return -code error "ERROR: all the slit openings need to be numbers"
+  }
+
+  # request fast shutter to close here
+  set tempstr [SplitReply [mc1 send MG FSWHAT]]
+  broadcast "Fast Shutter:$tempstr"
+  drive fs_shutter_request 0
+
+  # first step is to change the collimation guide according
+  # to the mode
+  set expmode [SplitReply [mode]]
+  if {[lsearch $::exp_mode::valid_modes $expmode] == -1} {
+    Clientput "Please set the mode first"
+    drive ss1u 0 ss1d 0 ss2u 0 ss2d 0 ss3u 0 ss3d 0 ss4d 0 ss4u 0
+    return -code error "Please set the mode first"
+  }
+
+  if {[catch {::exp_mode::set_guide_element $expmode} errMsg]} {
+    # make sure the guide element is moved.
+    return -code error $errMsg
+  }
+
+  if {[catch {
+    set d1 [::exp_mode::get_omega $arg1]
+    set d2 [::exp_mode::get_two_theta $arg2]
+    Clientput $d1 $d2
+    set d3 "$d1 $d2"
+    drive {*}$d3
+  
+    drive ss1u [expr 0.5 * $s1vg] ss1d [expr -0.5 * $s1vg] ss2d [expr -0.5 * $s2vg] ss3u [expr 0.5 * $s3vg] ss4d [expr -0.5*$s4vg] ss2u [expr 0.5 * $s2vg] ss3d [expr -0.5 * $s3vg] ss4u [expr 0.5 * $s4vg]
+  } errMsg ] } {
+    omega -1
+    twotheta -1
+    drive ss1u 0 ss1d 0 ss2u 0 ss3d 0 ss4u 0 ss2d 0 ss3u 0 ss4d 0
+    broadcast ERROR: omega_2theta command did not complete correctly
+    broadcast $errMsg
+
+    # request fast shutter to open here
+    drive fs_shutter_request 1
+
+    return -code error $errMsg
+  }
+
+  # request fast shutter to open here.
+  drive fs_shutter_request 1
+
+  statemon stop om2th
+
+  return -code ok
+}
+publish ::exp_mode::nomega_2theta user
+
+
+proc ::exp_mode::get_omega { arg } {
+  # position in radians
+  set argrad [deg2rad $arg]
+  set expmode [SplitReply [mode]]
+
+  switch $expmode {
+    SB {
+    #checked ARJN on 081231
+      set d1 [expr [SplitReply [slit3_distance]] - [SplitReply [guide1_distance]]]
+      set d2 [expr [SplitReply [sample_distance]] - [SplitReply [guide1_distance]]]
+      set h1 [expr -1. * $d1 * tan($argrad)]
+      set h2 [expr -1. * $d2 * tan($argrad)]
+      set m1roh [expr -1.*$arg/2.]
+
+      checkMotion st3vt $h1
+      checkMotion sz $h2
+      checkmotion m1ro $m1roh
+      return "st3vt $h1 sz $h2 m1ro $m1roh"
+    }
+    DB {
+    #checked ARJN on 081231
+      set temp [deg2rad 2.4]
+      # offset is the vertical drop from the beam centre onto the middle of the second compound mirror
+      # each compound mirror is 600mm long
+      # therefore the distance between the place where the beam hits the centre of both mirrors is
+      # 2 * 300 * cos(1.2) = 599.868
+
+      # guide2_distance is therefore the distance from the midpoint of the second compound mirror to chopper disc 1.
+      # i.e. sample-> midpoint of compound mirror2 = 1546 + 300*cos3.6 = 1845.4
+
+      set offset [expr 599.868*sin($temp)]
+      # fixed angle
+      set arg 4.8
+      set argrad [deg2rad $arg]
+
+      set d1 [expr [SplitReply [slit3_distance]] - [SplitReply [guide2_distance]]]
+      set d2 [expr [SplitReply [sample_distance]] - [SplitReply [guide2_distance]]]
+      set h1 [expr -1. * $d1 * tan($argrad) - $offset]
+      set h2 [expr -1. * $d2 * tan($argrad) - $offset]
+
+      checkMotion st3vt $h1
+      checkMotion sz $h2
+      return "st3vt $h1 sz $h2"
+    }
+    FOC {
+      checkMotion sth $arg
+      checkMotion st3vt 0
+      return "sth $arg st3vt 0"
+    }
+    MT {
+      checkMotion sth $arg
+      checkMotion st3vt 0
+      return "sth $arg st3vt 0"
+    }
+    POL {
+      checkMotion sth $arg
+      checkMotion st3vt 0
+      return "sth $arg st3vt 0"
+    }
+    POLANAL {
+      checkMotion sth $arg
+      checkMotion st3vt 0
+      return "sth $arg st3vt 0"
+    }
+    default {
+      return -code error "omega driving not specified for that mode"
+    }
+  }
+
+  return -code ok
+}
+publish ::exp_mode::get_omega user
+
+
+proc ::exp_mode::get_two_theta { arg } {
+  set expmode [SplitReply [mode]]
+  set expomega [SplitReply [omega]]
+
+  if {[lsearch $::exp_mode::valid_modes $expmode] == -1} {
+    return -code error "please set the mode and omega first"
+  }
+  if {$expomega == "NaN"} {
+    return -code error "please set omega first"
+  }
+
+  #2theta position in radians
+  set argrad [deg2rad $arg]
+  set omegarad [deg2rad $expomega]
+
+  Clientput $expmode
+  switch $expmode {
+    SB {
+    # checked ARJN 081231
+      set d1 [expr [SplitReply [slit4_distance]] - [SplitReply [sample_distance]]]
+      set d2 [expr [SplitReply [slit4_distance]] - [SplitReply [guide1_distance]]]
+      #distance if 2theta is zero, i.e. the direct beam
+      set h1 [expr -1. * $d2 * tan($omegarad)]
+      set b  [expr $d1 / cos($omegarad)]
+      set c  [expr $d1 / cos($argrad-$omegarad)]
+      # cosine rule
+      set h2 [expr sqrt(pow($b,2) + pow($c,2) - 2*$b*$c*cos($argrad))]
+      set st4vt_overall [expr $h2 + $h1]
+      
+      set d3 [expr [SplitReply [dy]]]
+      set d4 [expr [SplitReply [dy]] + [SplitReply [sample_distance]] - [SplitReply [guide1_distance]]]
+      set h3 [expr -1. * $d4 * tan($omegarad)]
+      set b  [expr $d3 / cos($omegarad)]
+      set c  [expr $d3 / cos($argrad-$omegarad)]
+      set h4 [expr sqrt(pow($b,2) + pow($c,2) - 2*$b*$c*cos($argrad))]
+      set dz_overall [expr $h3 + $h4]
+	  
+      checkMotion st4vt $st4vt_overall
+      checkMotion dz $dz_overall
+      
+      return "st4vt $st4vt_overall dz $dz_overall"
+    }
+    DB {
+    # checked ARJN 081231
+      set temp [deg2rad 2.4]
+      set offset [expr 599.868*sin($temp)]
+
+      set expomega 4.8
+      set omegarad [deg2rad $expomega]
+
+      set d1 [expr [SplitReply [slit4_distance]] - [SplitReply [sample_distance]]]
+      set d2 [expr [SplitReply [slit4_distance]] - [SplitReply [guide2_distance]]]
+      set h1 [expr -1. * $d2 * tan($omegarad) - $offset]
+      set b  [expr $d1 / cos($omegarad)]
+      set c  [expr $d1 / cos($argrad-$omegarad)]
+      set h2 [expr sqrt(pow($b,2) + pow($c,2) - 2*$b*$c*cos($argrad))]
+      set st4vt_overall [expr $h2 + $h1]
+
+
+      set d3 [expr [SplitReply [dy]]]
+      set d4 [expr [SplitReply [dy]] + [SplitReply [sample_distance]] - [SplitReply [guide2_distance]]]
+      set h3 [expr -1. * $d4 * tan($omegarad) - $offset]
+      set b  [expr $d3 / cos($omegarad)]
+      set c  [expr $d3 / cos($argrad-$omegarad)]
+      set h4 [expr sqrt(pow($b,2) + pow($c,2) - 2*$b*$c*cos($argrad))]
+      set dz_overall [expr $h3 + $h4]
+
+      checkMotion st4vt $st4vt_overall
+      checkMotion dz $dz_overall
+      
+      return "st4vt $st4vt_overall dz $dz_overall"
+    }
+    FOC {
+      set d1 [SplitReply [dy]]
+      set d2 [expr [SplitReply [slit4_distance]] - [SplitReply [sample_distance]]]
+      set h1 [expr $d1 * tan($argrad)]
+      set h2 [expr $d2 * tan($argrad)]
+
+      checkMotion st4vt $h2
+      checkMotion dz $h1
+      return "st4vt $h2 dz $h1"
+    }
+    MT {
+      set d1 [SplitReply [dy]]
+      set d2 [expr [SplitReply [slit4_distance]] - [SplitReply [sample_distance]]]
+      set h1 [expr $d1 * tan($argrad)]
+      set h2 [expr $d2 * tan($argrad)]
+
+      checkMotion st4vt $h2
+      checkMotion dz $h1
+      return "st4vt $h2 dz $h1"
+    }
+    POL {
+      set d1 [SplitReply [dy]]
+      set d2 [expr [SplitReply [slit4_distance]] - [SplitReply [sample_distance]]]
+      set h1 [expr $d1 * tan($argrad)]
+      set h2 [expr $d2 * tan($argrad)]
+
+      checkMotion st4vt $h2
+      checkMotion dz $h1
+      return "st4vt $h2 dz $h1 analz -200 analtilt 0"
+    }
+    POLANAL {
+      set d1 [SplitReply [dy]]
+      set d2 [expr [SplitReply [slit4_distance]] - [SplitReply [sample_distance]]]
+      set d3 [expr [SplitReply [anal_distance]] - [SplitReply [sample_distance]]]
+      set h1 [expr $d1 * tan($argrad)]
+      set h2 [expr $d2 * tan($argrad)]
+      set h3 [expr $d3 * tan($argrad)]
+      set ang1 [expr $arg]
+
+      checkMotion st4vt $h2
+      checkMotion dz $h1
+      checkMotion analz $h3
+      checkMotion analtilt $ang1
+      return "st4vt $h2 dz $h1 analz $h3 analtilt $ang1"
+    }
+    default {
+      return -code error "two_theta not defined for that mode: $expmode"
+    }
+  }
+  return -code ok
+}
+publish ::exp_mode::get_two_theta user
+
+#
 # @brief Commands initialisation procedure
 proc ::commands::isc_initialize {} {
   ::commands::ic_initialize
